@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import EmailStr
@@ -8,9 +7,9 @@ class Settings(BaseSettings):
     """
     Settings for the UAS application.
     """
-
+    
     # Database configuration
-    SQLITE_DATABASE_URL: str
+    POSTGRESQL_DATABASE_URL: str
 
     # JWT configuration
     JWT_SECRET_KEY: str

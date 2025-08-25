@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.configuration.database import Base, engine
+from app.controllers.user_controller import auth_router
+
 from app.models.user_model import (
-    User,
-)  # Ensure models are imported so that they are registered with SQLAlchemy
+    User, PasswordResetToken, UserSession
+)
 
 
 @asynccontextmanager
@@ -14,9 +15,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    # Shutdown code
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
-
 app = FastAPI(lifespan=lifespan)
+
+
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])

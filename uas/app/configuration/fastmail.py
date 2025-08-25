@@ -1,7 +1,6 @@
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from starlette.background import BackgroundTasks
-
 from app.configuration.settings import settings
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from starlette.background import BackgroundTasks
 
 conf = ConnectionConfig(
     MAIL_USERNAME=settings.MAIL_USERNAME,
