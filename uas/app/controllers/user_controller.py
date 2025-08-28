@@ -11,6 +11,7 @@ from app.schemas.user_schemas import (
 )
 from app.services.auth_service import AuthService
 from app.services.password_service import PasswordService
+from app.services.social_authentication_service import SocialAuthenticationService
 from app.services.token_service import TokenService
 from app.services.user_service import UserService
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -28,44 +29,44 @@ db_dependency = Depends(get_db)
 
 
 @auth_router.post(
-    "/email-register", response_model=UserProfile, status_code=status.HTTP_201_CREATED
+    "/signup", response_model=UserProfile, status_code=status.HTTP_201_CREATED
 )
-async def register_account(
+async def signup_account(
     data: UserRegister,
     background_tasks: BackgroundTasks,
     session=db_dependency,
 ):
     """Register a new user account."""
     try:
-        return await AuthService(session).register_account(data, background_tasks)
+        return await AuthService(session).sigup_account(data, background_tasks)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@auth_router.get("/google", status_code=status.HTTP_200_OK)
-async def social_login(
+@auth_router.get("/continue-google", status_code=status.HTTP_200_OK)
+async def oauth_google(
     session=db_dependency,
 ):
     """Authenticate a user via social login and return JWT tokens."""
-    return await AuthService(session).register_account_with_google()
+    return await SocialAuthenticationService(session).oauth_google()
 
 
-@auth_router.get("/google/callback", status_code=status.HTTP_200_OK)
-async def google_callback(
+@auth_router.get("/continue-google/callback", status_code=status.HTTP_200_OK)
+async def oauth_google_callback(
     request: Request,
     response: Response,
     session=db_dependency,
 ):
     """Handle Google OAuth2 callback and return JWT tokens."""
     try:
-        return await AuthService(session).register_account_with_google_callback(
+        return await SocialAuthenticationService(session).oauth_google_callback(
             request, response
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@auth_router.post("/login-cookie", status_code=status.HTTP_200_OK)
+@auth_router.post("/signin", status_code=status.HTTP_200_OK)
 async def login_account_cookie(
     response: Response,
     session=db_dependency,
@@ -78,7 +79,7 @@ async def login_account_cookie(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@auth_router.post("/logout", status_code=status.HTTP_200_OK)
+@auth_router.post("/signout", status_code=status.HTTP_200_OK)
 async def logout_account(
     response: Response,
     session=db_dependency,
@@ -130,14 +131,14 @@ async def reset_password(
 @auth_router.get(
     "/verify-email/{token}", response_model=UserProfile, status_code=status.HTTP_200_OK
 )
-async def verify_email(
+async def email_address_verify(
     token: str,
     background_tasks: BackgroundTasks,
     session=db_dependency,
 ):
     """Verify a user's email address using the provided token."""
     try:
-        return await AuthService(session).verify_email_address(token, background_tasks)
+        return await AuthService(session).email_address_verify(token, background_tasks)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -158,14 +159,14 @@ async def verify_email_password_reset(
 
 
 @auth_router.post("/resend-verification", status_code=status.HTTP_200_OK)
-async def resend_verification_email(
+async def email_address_verify_resend(
     email: EmailStr,
     background_tasks: BackgroundTasks,
     session=db_dependency,
 ):
     """Resend the email verification link to the user's email address."""
     try:
-        return await AuthService(session).resend_verification_email(
+        return await AuthService(session).email_address_verify_resend(
             email, background_tasks
         )
     except ValueError as e:
@@ -226,6 +227,7 @@ async def verify_2fa(
 async def delete_account(
     account_id: int,
     session=db_dependency,
+    authorize=user_dependency,
 ):
     """Delete the current logged-in user's account. This Route Need Cookie Authorization"""
     return await UserService(session).delete_account(account_id)

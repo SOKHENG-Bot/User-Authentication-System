@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Token expiration times (in minutes)
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_MINUTES: int
+    SESSION_TOKEN_EXPIRE_MINUTES: int
     EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES: int
 
     # FastAPI-Mail configuration

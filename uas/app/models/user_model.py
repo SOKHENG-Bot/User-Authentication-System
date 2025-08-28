@@ -1,5 +1,14 @@
 from app.configuration.database import Base
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 
@@ -46,8 +55,8 @@ class UserSession(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_token = Column(String(255), unique=True, nullable=False, index=True)
-    device_info = Column(String(255), nullable=True)
+    session_token = Column(Text, unique=True, nullable=False, index=True)
+    device_info = Column(Text, nullable=True)
     ip_address = Column(String(45), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
