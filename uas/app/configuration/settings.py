@@ -1,19 +1,25 @@
 from pathlib import Path
-from pydantic_settings import BaseSettings
+
 from pydantic import EmailStr
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """
     Settings for the UAS application.
     """
-    
+
     # Database configuration
     POSTGRESQL_DATABASE_URL: str
 
     # JWT configuration
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str
+
+    # Token expiration times (in minutes)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_MINUTES: int
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES: int
 
     # FastAPI-Mail configuration
     MAIL_USERNAME: str
@@ -24,6 +30,11 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool
     MAIL_SSL_TLS: bool
     MAIL_TEMPLATE_FOLDER: str = str(Path(__file__).parent.parent / "templates")
+
+    # Google OAuth2 configuration
+    GOOGLE_CLIENT_ID: str
+    GOOGLE_REDIRECT_URI: str
+    GOOGLE_CLIENT_SECRET: str
 
     # Frontend URL
     FRONTEND_URL: str

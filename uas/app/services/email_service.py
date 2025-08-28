@@ -11,14 +11,14 @@ class EmailService:
 
     async def send_verification_email(
         self, data: User, token: str, background_tasks=BackgroundTasks
-    ):
+    ) -> None:
+        """Send verification email to the user."""
         message_data = {
             "System_name": "User Authentication System",
             "email": data.email,
             "username": data.username,
             "verification_link": f"{settings.FRONTEND_URL}/auth/verify-email/{token}",
         }
-
         await send_email(
             subject="Verify Your Email Address",
             recipients=[data.email],
@@ -29,14 +29,14 @@ class EmailService:
 
     async def send_confirmation_verification_email(
         self, data: User, background_tasks=BackgroundTasks
-    ):
+    ) -> None:
+        """Send confirmation email after successful verification."""
         message_data = {
             "System_name": "User Authentication System",
             "email": data.email,
             "username": data.username,
             "login_link": f"{settings.FRONTEND_URL}/auth/login",
         }
-
         await send_email(
             subject="Email Address Verified Successfully",
             recipients=[data.email],
@@ -47,14 +47,14 @@ class EmailService:
 
     async def send_verification_email_password_reset(
         self, data: User, token: str, background_tasks=BackgroundTasks
-    ):
+    ) -> None:
+        """Send verification email for password reset."""
         message_data = {
             "System_name": "User Authentication System",
             "email": data.email,
             "username": data.username,
             "verification_link": f"{settings.FRONTEND_URL}/auth/verify-email-password-reset/{token}",
         }
-
         await send_email(
             subject="Verify Your Email Address",
             recipients=[data.email],
@@ -65,14 +65,14 @@ class EmailService:
 
     async def send_password_reset_email(
         self, data: User, token: str, background_tasks=BackgroundTasks
-    ):
+    ) -> None:
+        """Send password reset email to the user."""
         message_data = {
             "System_name": "User Authentication System",
             "email": data.email,
             "username": data.username,
             "reset_password_link": f"{settings.FRONTEND_URL}/auth/reset-password",
         }
-
         await send_email(
             subject="Password Reset Request",
             recipients=[data.email],
@@ -83,14 +83,14 @@ class EmailService:
 
     async def send_email_confirmation_password_reset(
         self, data: User, background_tasks=BackgroundTasks
-    ):
+    ) -> None:
+        """Send confirmation email after successful password reset."""
         message_data = {
             "System_name": "User Authentication System",
             "email": data.email,
             "username": data.username,
             "login_link": f"{settings.FRONTEND_URL}/auth/login",
         }
-
         await send_email(
             subject="Password Changed Successfully",
             recipients=[data.email],

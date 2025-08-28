@@ -1,7 +1,6 @@
-from sqlalchemy import Integer, String, Boolean, Column, DateTime, func
-from datetime import datetime, timezone
-
 from app.configuration.database import Base
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.orm import relationship
 
 
 class User(Base):
@@ -30,25 +29,12 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
-    
+
     # 2FA fields
     two_fa_enabled = Column(Boolean, default=False)
     two_fa_secret = Column(String(255), nullable=True)
 
-
-class PasswordResetToken(Base):
-    """
-    Password reset token model for the UAS application.
-    """
-
-    __tablename__ = "password_reset_tokens"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False)
-    token = Column(String(255), unique=True, nullable=False)
-    used = Column(Boolean, default=False)
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    sessions = relationship("UserSession", back_populates="user")
 
 
 class UserSession(Base):
@@ -59,9 +45,11 @@ class UserSession(Base):
     __tablename__ = "user_sessions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False)
-    session_token = Column(String(255), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    session_token = Column(String(255), unique=True, nullable=False, index=True)
     device_info = Column(String(255), nullable=True)
     ip_address = Column(String(45), nullable=True)
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="sessions")

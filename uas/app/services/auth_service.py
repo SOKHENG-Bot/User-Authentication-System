@@ -1,112 +1,509 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from datetime import datetime, timezone
-from fastapi import BackgroundTasks
-from pydantic import EmailStr
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from app.models.user_model import User
-from app.services.util_service import UtilService
-from app.services.token_service import TokenService
-from app.schemas.user_schemas import UserRegister, UserLogin
-from app.services.email_service import EmailService
+import httpx
 from app.configuration.settings import settings
+from app.models.user_model import User, UserSession
+from app.schemas.user_schemas import UserRegister
+from app.services.email_service import EmailService
+from app.services.token_service import TokenService
+from app.services.util_service import UtilService
+from fastapi import BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import EmailStr
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
+from starlette.responses import RedirectResponse, Response
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+logger = logging.getLogger(__name__)
+
 
 class AuthService:
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def register_account(self, data: UserRegister, background_tasks: BackgroundTasks) -> User:
-        existing_account = await self.session.execute(
-            select(User).where((User.email == data.email) | (User.username == data.username))
+    async def get_current_user_via_cookie(
+        self,
+        token: str = Depends(TokenService(session=AsyncSession).get_token_from_cookie),
+    ) -> dict:
+        """Protected route using HttpOnly cookie for authentication."""
+        try:
+            if not token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                )
+            payload = TokenService(session=AsyncSession).validate_token(
+                token=token,
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+            return payload
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error retrieving user via cookie: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials.",
+            )
+
+    async def register_account(
+        self,
+        data: UserRegister,
+        background_tasks: BackgroundTasks,
+    ) -> User:
+        """Register a new user account and send a verification email."""
+        try:
+            existing_account = await self.session.execute(
+                select(User).where(
+                    (User.email == data.email) | (User.username == data.username)
+                )
+            )
+            if existing_account.scalars().first():
+                logging.warning("Attempt to register with existing email or username.")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email or username already in use.",
+                )
+            password_hashed = UtilService().hash_password(data.password)
+            new_account = User(
+                email=data.email,
+                username=data.username,
+                password_hash=password_hashed,
+                role="user",
+                is_active=False,
+                is_verified=False,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            self.session.add(new_account)
+            await self.session.commit()
+            await self.session.refresh(new_account)
+            verifification_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(new_account.id),
+                    "email": new_account.email,
+                    "username": new_account.username,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES,
+            )
+            await EmailService().send_verification_email(
+                new_account, verifification_token, background_tasks
+            )
+            return new_account
+
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error during account registration: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Account registration failed due to server error.",
+            )
+
+    async def verify_email_address(
+        self,
+        token: str,
+        background_tasks: BackgroundTasks,
+    ) -> User:
+        """Verify a user's email address using the provided token."""
+        try:
+            payload = TokenService(session=AsyncSession).validate_token(
+                token=token,
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+            account_email = payload.get("email")
+            if not account_email:
+                logger.warning("Token payload does not contain email.")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid token payload.",
+                )
+            statement = await self.session.execute(
+                select(User).where(User.email == account_email)
+            )
+            account = statement.scalars().first()
+            account.is_verified = True
+            account.is_active = True
+            account.updated_at = datetime.now(timezone.utc)
+
+            self.session.add(account)
+            await self.session.commit()
+            await self.session.refresh(account)
+            await EmailService().send_confirmation_verification_email(
+                account, background_tasks
+            )
+            return account
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error during email verification: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email verification failed.",
+            )
+
+    async def resend_verification_email(
+        self,
+        email: EmailStr,
+        background_tasks: BackgroundTasks,
+    ) -> User:
+        """Resend the email verification link to the user's email address."""
+        try:
+            statement = await self.session.execute(
+                select(User).where(User.email == email)
+            )
+            account = statement.scalars().first()
+            if not account:
+                logger.warning(
+                    f"Resend verification requested for non-existent email: {email}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No account found with the provided email.",
+                )
+            if account.is_verified:
+                logger.info(f"Email already verified for account: {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is already verified.",
+                )
+            verifification_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES,
+            )
+            await EmailService().send_verification_email(
+                account, verifification_token, background_tasks
+            )
+            return account
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error resending verification email: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to resend verification email.",
+            )
+
+    async def authenticate_account(
+        self,
+        data: OAuth2PasswordRequestForm = Depends(),
+    ) -> User:
+        """Authenticate a user and return access and access tokens."""
+        try:
+            statement = await self.session.execute(
+                select(User).where(User.email == data.username)
+            )
+            account = statement.scalars().first()
+            if not account:
+                logger.warning(f"Login attempt with invalid email: {data.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password.",
+                )
+            if not UtilService().verify_password(data.password, account.password_hash):
+                logger.warning(f"Invalid password attempt for email: {data.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password.",
+                )
+            if not account.is_active or not account.is_verified:
+                logger.warning(
+                    f"Inactive or unverified account login attempt: {data.email}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account is inactive or email not verified.",
+                )
+            account.last_login = datetime.now(timezone.utc)
+            access_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "role": account.role,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+            )
+            refresh_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
+            )
+            user_session = UserSession(
+                user_id=account.id,
+                session_token=refresh_token,
+                created_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+            )
+            self.session.add(user_session)
+            self.session.add(account)
+            await self.session.commit()
+            await self.session.refresh(account)
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "Bearer",
+            }
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error during authentication: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication failed due to server error.",
+            )
+
+    async def register_account_with_google(self) -> RedirectResponse:
+        """Redirect the user to Google's OAuth2 consent screen."""
+        # Construct the Google OAuth2 authorization URL
+        google_auth_url = (
+            f"https://accounts.google.com/o/oauth2/auth"
+            f"?response_type=code"
+            f"&client_id={settings.GOOGLE_CLIENT_ID}"
+            f"&redirect_uri={settings.GOOGLE_REDIRECT_URI}"
+            f"&scope=email%20profile"
+            f"&access_type=offline"
+            f"&prompt=consent"
         )
-        if existing_account.scalars().first():
-            raise ValueError("Email or username already in use.")
+        return {"Location": google_auth_url}
 
-        password_hashed = UtilService().hash_password(data.password)
-        new_account = User(
-            email=data.email,
-            username=data.username,
-            password_hash=password_hashed,
-            role="user",
-            is_active=False,
-            is_verified=False,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
-        )
-        self.session.add(new_account)
-        await self.session.commit()
-        await self.session.refresh(new_account)
+    async def register_account_with_google_callback(
+        self, request: Request, response: Response
+    ):
+        """Handle Google OAuth2 callback and return JWT tokens."""
+        # Extract the authorization code from the request
+        code = request.query_params.get("code")
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authorization code not provided.",
+            )
+        # Exchange the authorization code for an access token
+        data = {
+            "code": code,
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        }
+        # Use httpx to make async HTTP requests
+        async with httpx.AsyncClient() as client:
+            google_response = await client.post(
+                "https://oauth2.googleapis.com/token", data=data, timeout=10
+            )
+            if google_response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to obtain access token from Google.",
+                )
+            google_token = google_response.json()
+            google_access_token = google_token.get("access_token")
+            if not google_access_token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Access token not found in Google's response.",
+                )
+            # Retrieve user info from Google
+            user_info_response = await client.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                params={"access_token": google_access_token},
+            )
+            if user_info_response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to obtain user info from Google.",
+                )
+            user_info = user_info_response.json()
+            # Process user info and create or retrieve user account
+            email = user_info.get("email")
+            username = user_info.get("name") or email.split("@")[0]
+            if not email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email not found in Google's user info.",
+                )
+            # Check if the user already exists
+            statement = await self.session.execute(
+                select(User).where(User.email == email)
+            )
+            account = statement.scalars().first()
+            # If not, create a new user account
+            if not account:
+                account = User(
+                    email=email,
+                    username=username,
+                    password_hash=UtilService().hash_password(uuid.uuid4().hex),
+                    role="user",
+                    is_active=True,
+                    is_verified=True,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
+                self.session.add(account)
+                await self.session.commit()
+                await self.session.refresh(account)
+            # Update last login time
+            if account:
+                account.last_login = datetime.now(timezone.utc)
+                self.session.add(account)
+                await self.session.commit()
+                await self.session.refresh(account)
+            # Generate JWT tokens for the user
+            access_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "role": account.role,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
+            )
+            # Redirect to frontend with tokens in HttpOnly cookies
+            swagger_ui_url = "/docs"
+            redirect = RedirectResponse(url=swagger_ui_url)
+            # Set the access token in an HttpOnly cookie
+            redirect.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                # secure=True,  # Uncomment this in production (requires HTTPS)
+                samesite="Lax",  # or "None" if frontend/backend are on different ports
+                max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            )
+            return redirect
 
-        token = TokenService().generate_secure_token(
-            payload={"user_id": new_account.id, "email": new_account.email, "username": new_account.username},
-            secret_key=settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-            expires_in=300
-        )
-        await EmailService().send_verification_email(new_account, token, background_tasks)
-        return new_account
-    
-    async def verify_email_address(self, token: str, background_tasks: BackgroundTasks):
-        payload = TokenService().validate_secure_token(
-            token=token,
-            secret_key=settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
-        account_email = payload.get("email")
-        if not account_email:
-            raise ValueError("Invalid token payload.")
-        
-        statement = await self.session.execute(select(User).where(User.email == account_email))
-        account = statement.scalars().first()
-        account.is_verified = True
-        account.is_active = True
-        account.updated_at = datetime.now(timezone.utc)
+    async def login_and_store_cookie(
+        self,
+        response: Response,
+        data: OAuth2PasswordRequestForm = Depends(),
+    ):
+        """Authenticate a user and store JWT tokens in HttpOnly cookies."""
+        try:
+            statement = await self.session.execute(
+                select(User).where(User.email == data.username)
+            )
+            account = statement.scalars().first()
 
-        self.session.add(account)
-        await self.session.commit()
-        await self.session.refresh(account)
-        await EmailService().send_confirmation_verification_email(account, background_tasks)
-        return account
+            if not account:
+                logger.warning(f"Login attempt with invalid email: {data.username}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password.",
+                )
 
+            # Verify password
+            if not UtilService().verify_password(data.password, account.password_hash):
+                logger.warning(f"Invalid password attempt for email: {data.username}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password.",
+                )
 
-    async def resend_verification_email(self, email: EmailStr, background_tasks: BackgroundTasks):
-        statement = await self.session.execute(select(User).where(User.email == email))
-        account = statement.scalars().first()
-        if not account:
-            raise ValueError("Account with this email does not exist.")
-        if account.is_verified:
-            raise ValueError("Email already verified.")
-        
-        token = TokenService().generate_secure_token(
-            payload={"user_id": account.id, "email": account.email, "username": account.username},
-            secret_key=settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-            expires_in=300
-        )
-        await EmailService().send_verification_email(account, token, background_tasks)
-        return account
+            # Check status
+            if not account.is_active or not account.is_verified:
+                logger.warning(
+                    f"Inactive/unverified account login attempt: {data.username}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account is inactive or email not verified.",
+                )
 
-    async def authenticate_account(self, data: UserLogin) -> User:
-        statement = await self.session.execute(select(User).where(User.email == data.email))
-        account = statement.scalars().first()
-        if not account:
-            raise ValueError("Invalid email or password.")
-        
-        if not UtilService().verify_password(data.password, account.password_hash):
-            raise ValueError("Invalid email or password.")
-        
-        if not account.is_active or not account.is_verified:
-            raise ValueError("Account is not active or email is not verified.")
-        
-        account.last_login = datetime.now(timezone.utc)
-        self.session.add(account)
-        await self.session.commit()
-        await self.session.refresh(account)
-        return account
+            # Update last login
+            account.last_login = datetime.now(timezone.utc)
+            self.session.add(account)
+            await self.session.commit()
+            await self.session.refresh(account)
 
-    async def login_with_social_account(self):
-        pass
+            # Generate tokens for session storage
+            session_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=30,  # seconds
+            )
+            user_session = UserSession(
+                user_id=account.id,
+                session_token=session_token,
+                created_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+            )
+            self.session.add(user_session)
+            await self.session.commit()
+            await self.session.refresh(account)
 
-    async def logout_account(self):
-        pass
+            # Generate access and refresh tokens cookiea
+            access_token = TokenService(session=AsyncSession).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "role": account.role,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
+            )
+
+            # Store tokens in HttpOnly cookies
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite="Lax",
+                max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            )
+
+            return {
+                "message": "Login successful",
+                "access_token_cookie": {
+                    "token": access_token,
+                },
+                "token_type": "Bearer",
+            }
+
+        except HTTPException:
+            raise
+        except Exception as err:
+            logger.error(f"Error during authentication: {str(err)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication failed due to server error.",
+            )
