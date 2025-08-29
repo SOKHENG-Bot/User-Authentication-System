@@ -1,17 +1,16 @@
+from fastapi import BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.configuration.fastmail import send_email
 from app.configuration.settings import settings
 from app.models.user_model import User
-from fastapi import BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class EmailService:
     def __inti__(self, session: AsyncSession):
         self.session = session
 
-    async def send_verification_email(
-        self, data: User, token: str, background_tasks=BackgroundTasks
-    ) -> None:
+    async def send_verification_email(self, data: User, token: str, background_tasks=BackgroundTasks) -> None:
         """Send verification email to the user."""
         message_data = {
             "System_name": "User Authentication System",
@@ -27,9 +26,7 @@ class EmailService:
             background_tasks=background_tasks,
         )
 
-    async def send_confirmation_verification_email(
-        self, data: User, background_tasks=BackgroundTasks
-    ) -> None:
+    async def send_confirmation_verification_email(self, data: User, background_tasks=BackgroundTasks) -> None:
         """Send confirmation email after successful verification."""
         message_data = {
             "System_name": "User Authentication System",
@@ -63,9 +60,7 @@ class EmailService:
             background_tasks=background_tasks,
         )
 
-    async def send_password_reset_email(
-        self, data: User, token: str, background_tasks=BackgroundTasks
-    ) -> None:
+    async def send_password_reset_email(self, data: User, token: str, background_tasks=BackgroundTasks) -> None:
         """Send password reset email to the user."""
         message_data = {
             "System_name": "User Authentication System",
@@ -81,9 +76,7 @@ class EmailService:
             background_tasks=background_tasks,
         )
 
-    async def send_email_confirmation_password_reset(
-        self, data: User, background_tasks=BackgroundTasks
-    ) -> None:
+    async def send_email_confirmation_password_reset(self, data: User, background_tasks=BackgroundTasks) -> None:
         """Send confirmation email after successful password reset."""
         message_data = {
             "System_name": "User Authentication System",

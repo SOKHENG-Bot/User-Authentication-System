@@ -1,4 +1,3 @@
-from app.configuration.database import Base
 from sqlalchemy import (
     Boolean,
     Column,
@@ -10,6 +9,8 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import relationship
+
+from app.configuration.database import Base
 
 
 class User(Base):

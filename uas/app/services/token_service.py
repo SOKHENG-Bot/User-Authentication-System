@@ -1,25 +1,25 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from app.models.user_model import UserSession
-from sqlalchemy import delete
+from fastapi import HTTPException, status
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.responses import Response
+
+from app.configuration.settings import settings
+from app.models.user_model import User, UserSession
 
 
 class TokenService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    def generate_token(
-        self, data: dict, secret_key: str, algorithm: str, expires_in: int
-    ) -> str:
+    def generate_token(self, data: dict, secret_key: str, algorithm: str, expires_in: int) -> str:
         """Generate a JWT token."""
         payload = data.copy()
-        payload.update(
-            {"exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)}
-        )
+        payload.update({"exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)})
         token = jwt.encode(data, secret_key, algorithm=algorithm)
         return token
 
@@ -28,22 +28,9 @@ class TokenService:
         payload = jwt.decode(token, secret_key, algorithms=algorithms)
         return payload
 
-    def refresh_token(self):
-        pass
-
-    async def revoke_token(
-        self, user_id: int, response: Response, all_sessions: bool = False
-    ):
-        """
-        Revoke token for user:
-        - If all_sessions is True, revoke all tokens for the user.
-        - If all_sessions is False, revoke only the current session's token.
-        """
+    async def revoke_token(self, user_id: int, response: Response, all_sessions: bool = False):
         if all_sessions:
-            # Logic to revoke all tokens for the user
-            await self.session.execute(
-                delete(UserSession).where(UserSession.user_id == user_id)
-            )
+            await self.session.execute(delete(UserSession).where(UserSession.user_id == user_id))
         else:
             # Logic to revoke only the current session's token
             # This requires identifying the current session, which might involve
@@ -59,9 +46,73 @@ class TokenService:
     def blacklist_token(self):
         pass
 
-    async def get_token_from_cookie(self, request: Request):
+    async def get_access_token_from_cookie(self, request: Request):
         """Extract the JWT token from HttpOnly cookies."""
-        token = request.cookies.get("access_token")
-        if not token:
+        access_token = request.cookies.get("access_token")
+        if not access_token:
             return None
-        return token
+        return access_token
+
+    async def get_refresh_token_from_cookie(self, request: Request):
+        """Extract the JWT refresh token from HttpOnly cookies."""
+        refresh_token = request.cookies.get("refresh_token")
+        if not refresh_token:
+            return None
+        return refresh_token
+
+    async def refresh_access_token(self, current_user: dict, response: Response):
+        account_id = current_user["user_id"]
+        account_statement = await self.session.execute(select(User).where(User.id == int(account_id)))
+        account = account_statement.scalars().first()
+        if not account:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid refresh token")
+        session_statement = await self.session.execute(select(UserSession).where(UserSession.id == int(account_id)))
+        session_account = session_statement.scalars().first()
+        if not session_account:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session not found")
+        if session_account.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session token expired")
+
+        # Generate JWT tokens for the user
+        access_token = TokenService(session=AsyncSession).generate_token(
+            data={
+                "user_id": str(account.id),
+                "email": account.email,
+                "username": account.username,
+                "role": account.role,
+                "jti": str(uuid.uuid4()),
+            },
+            secret_key=settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
+        # Generate refresh token for refresh access token
+        refresh_token = TokenService(session=AsyncSession).generate_token(
+            data={
+                "user_id": str(account.id),
+                "email": account.email,
+                "username": account.username,
+                "role": account.role,
+                "jti": str(uuid.uuid4()),
+            },
+            secret_key=settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+            expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
+        )
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            # secure=True,  # Uncomment this in production (requires HTTPS)
+            samesite="Lax",  # or "None" if frontend/backend are on different ports
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            # secure=True,
+            samesite="Lax",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        )
+        return {"access_token": access_token, "expire_time": "1-minutes"}

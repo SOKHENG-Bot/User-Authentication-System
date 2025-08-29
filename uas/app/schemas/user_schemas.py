@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -11,39 +10,45 @@ class UserRegister(BaseModel):
 
     # Custom validator to restrict certain email domains
     @field_validator("email")
-    def validate_email(cls, validate: str) -> str:
+    @staticmethod
+    def validate_email(validate: str) -> str:
         if validate.endswith("@example.com"):
             raise ValueError("Registration using example.com emails is not allowed.")
         return validate
 
     # Sanitize email to prevent leading/trailing spaces
     @field_validator("email")
-    def sanitize_email(cls, value: str) -> str:
+    @staticmethod
+    def sanitize_email(value: str) -> str:
         return value.strip().lower()
 
     # Santitize username to prevent special characters
     @field_validator("username")
-    def validate_username(cls, value: str) -> str:
+    @staticmethod
+    def validate_username(value: str) -> str:
         if not value.isalnum():
             raise ValueError("Username must be alphanumeric.")
         return value
 
     # Sanitize password to prevent common weak passwords
     @field_validator("password")
-    def validate_password(cls, value: str) -> str:
+    @staticmethod
+    def validate_password(value: str) -> str:
         if len(value) < 6:
             raise ValueError("Password must be at least 6 characters long.")
         return value
 
     class Config:
         orm_mode = (True,)
-        json_schema_extra = {
-            "example": {
-                "username": "johndoe",
-                "email": "mengsokheng0600@gmail.com",
-                "password": "strongpassword123",
-            }
-        }
+        json_schema_extra = (
+            {
+                "example": {
+                    "username": "johndoe",
+                    "email": "mengsokheng0600@gmail.com",
+                    "password": "strongpassword123",
+                }
+            },
+        )
 
 
 class UserLogin(BaseModel):
@@ -52,12 +57,14 @@ class UserLogin(BaseModel):
 
     class Config:
         orm_mode = (True,)
-        json_schema_extra = {
-            "example": {
-                "email": "mengsokheng0600@gmail.com",
-                "password": "strongpassword123",
-            }
-        }
+        json_schema_extra = (
+            {
+                "example": {
+                    "email": "mengsokheng0600@gmail.com",
+                    "password": "strongpassword123",
+                }
+            },
+        )
 
 
 class PasswordReset(BaseModel):
@@ -67,13 +74,15 @@ class PasswordReset(BaseModel):
 
     class Config:
         orm_mode = True
-        json_schema_extra = {
-            "example": {
-                "email": "mengsokheng0600@gmail.com",
-                "new_password": "newstrongpassword123",
-                "confirm_password": "newstrongpassword123",
-            }
-        }
+        json_schema_extra = (
+            {
+                "example": {
+                    "email": "mengsokheng0600@gmail.com",
+                    "new_password": "newstrongpassword123",
+                    "confirm_password": "newstrongpassword123",
+                }
+            },
+        )
 
 
 class PasswordChange(BaseModel):
@@ -82,12 +91,14 @@ class PasswordChange(BaseModel):
 
     class Config:
         orm_mode = True
-        json_schema_extra = {
-            "example": {
-                "old_password": "oldstrongpassword123",
-                "new_password": "newstrongpassword123",
-            }
-        }
+        json_schema_extra = (
+            {
+                "example": {
+                    "old_password": "oldstrongpassword123",
+                    "new_password": "newstrongpassword123",
+                }
+            },
+        )
 
 
 class UserProfile(BaseModel):
@@ -112,20 +123,22 @@ class LoginProfile(UserProfile):
 
 
 class UserUpdateProfile(BaseModel):
-    username: Optional[str] = None
+    username: str | None = None
 
     class Config:
         orm_mode = True
-        json_schema_extra = {
-            "example": {
-                "username": "johndoe",
-            }
-        }
+        json_schema_extra = (
+            {
+                "example": {
+                    "username": "johndoe",
+                }
+            },
+        )
 
 
 class EmailSchema(BaseModel):
     email: EmailStr
-    username: Optional[str] = None
+    username: str | None = None
 
     class Config:
         orm_mode = True

@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+
 from app.configuration.database import Base, engine
 from app.controllers.user_controller import auth_router, user_router
-from fastapi import FastAPI
 
 
 @asynccontextmanager

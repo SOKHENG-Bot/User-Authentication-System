@@ -1,6 +1,7 @@
-from app.configuration.settings import settings
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from starlette.background import BackgroundTasks
+
+from app.configuration.settings import settings
 
 conf = ConnectionConfig(
     MAIL_USERNAME=settings.MAIL_USERNAME,
@@ -35,6 +36,4 @@ async def send_email(
         subtype=MessageType.html,
     )
     # Add the email sending task to background tasks
-    background_tasks.add_task(
-        fast_mail.send_message, message, template_name=template_file
-    )
+    background_tasks.add_task(fast_mail.send_message, message, template_name=template_file)

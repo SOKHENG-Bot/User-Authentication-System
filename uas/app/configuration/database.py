@@ -1,9 +1,10 @@
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
-from app.configuration.settings import settings
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+from app.configuration.settings import settings
 
 engine = create_async_engine(
     settings.POSTGRESQL_DATABASE_URL,
