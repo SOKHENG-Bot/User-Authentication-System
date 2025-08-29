@@ -40,15 +40,13 @@ class UserRegister(BaseModel):
 
     class Config:
         orm_mode = (True,)
-        json_schema_extra = (
-            {
-                "example": {
-                    "username": "johndoe",
-                    "email": "mengsokheng0600@gmail.com",
-                    "password": "strongpassword123",
-                }
-            },
-        )
+        json_schema_extra = {
+            "example": {
+                "username": "johndoe",
+                "email": "mengsokheng0600@gmail.com",
+                "password": "strongpassword123",
+            }
+        }
 
 
 class UserLogin(BaseModel):
@@ -57,14 +55,12 @@ class UserLogin(BaseModel):
 
     class Config:
         orm_mode = (True,)
-        json_schema_extra = (
-            {
-                "example": {
-                    "email": "mengsokheng0600@gmail.com",
-                    "password": "strongpassword123",
-                }
-            },
-        )
+        json_schema_extra = {
+            "example": {
+                "email": "mengsokheng0600@gmail.com",
+                "password": "strongpassword123",
+            }
+        }
 
 
 class PasswordReset(BaseModel):
@@ -74,15 +70,13 @@ class PasswordReset(BaseModel):
 
     class Config:
         orm_mode = True
-        json_schema_extra = (
-            {
-                "example": {
-                    "email": "mengsokheng0600@gmail.com",
-                    "new_password": "newstrongpassword123",
-                    "confirm_password": "newstrongpassword123",
-                }
-            },
-        )
+        json_schema_extra = {
+            "example": {
+                "email": "mengsokheng0600@gmail.com",
+                "new_password": "newstrongpassword123",
+                "confirm_password": "newstrongpassword123",
+            }
+        }
 
 
 class PasswordChange(BaseModel):
@@ -91,14 +85,12 @@ class PasswordChange(BaseModel):
 
     class Config:
         orm_mode = True
-        json_schema_extra = (
-            {
-                "example": {
-                    "old_password": "oldstrongpassword123",
-                    "new_password": "newstrongpassword123",
-                }
-            },
-        )
+        json_schema_extra = {
+            "example": {
+                "old_password": "oldstrongpassword123",
+                "new_password": "newstrongpassword123",
+            }
+        }
 
 
 class UserProfile(BaseModel):
@@ -127,13 +119,11 @@ class UserUpdateProfile(BaseModel):
 
     class Config:
         orm_mode = True
-        json_schema_extra = (
-            {
-                "example": {
-                    "username": "johndoe",
-                }
-            },
-        )
+        json_schema_extra = {
+            "example": {
+                "username": "johndoe",
+            }
+        }
 
 
 class EmailSchema(BaseModel):
