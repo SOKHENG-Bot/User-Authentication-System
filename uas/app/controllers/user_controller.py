@@ -16,15 +16,21 @@ from app.schemas.user_schemas import (
 )
 from app.services.auth_service import AuthService
 from app.services.password_service import PasswordService
-from app.services.social_authentication_service import SocialAuthenticationService
+from app.services.social_authentication_service import (
+    SocialAuthenticationService,
+)
 from app.services.token_service import TokenService
 from app.services.user_service import UserService
 
 auth_router = APIRouter()
 user_router = APIRouter()
 
-user_dependency = Depends(AuthService(session=AsyncSession).get_current_user_via_cookie)
-refresh_dependecy = Depends(AuthService(session=AsyncSession).get_current_user_via_refresh_cookie)
+user_dependency = Depends(
+    AuthService(session=AsyncSession).get_current_user_via_cookie
+)
+refresh_dependecy = Depends(
+    AuthService(session=AsyncSession).get_current_user_via_refresh_cookie
+)
 db_dependency = Depends(get_db)
 
 
@@ -74,7 +80,9 @@ async def oauth_google_callback(
 ):
     """Handle Google OAuth2 callback and return JWT tokens."""
     try:
-        return await SocialAuthenticationService(session).oauth_google_callback(request, response)
+        return await SocialAuthenticationService(session).oauth_google_callback(
+            request, response
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -112,7 +120,28 @@ async def logout_account(
 ):
     """Logout the current user by invalidating their token. This Route Need Cookie Authorization"""
     try:
-        return await TokenService(session).revoke_token(authorize, response, all_sessions=False)
+        return await TokenService(session).revoke_token(authorize, response)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@auth_router.post(
+    "/signout-all-device",
+    status_code=status.HTTP_200_OK,
+)
+async def logout_account_all_device(
+    response: Response,
+    session=db_dependency,
+    authorize=user_dependency,
+):
+    """Logout the current user by invalidating their token. This Route Need Cookie Authorization"""
+    try:
+        return await TokenService(session).revoke_token_all_device(
+            authorize, response
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -131,7 +160,9 @@ async def refresh_token(
 ):
     """Refresh the JWT token for the current user. This Route Need Cookie Authorization"""
     try:
-        return await TokenService(session).refresh_access_token(authorize, response)
+        return await TokenService(session).refresh_access_token(
+            authorize, response
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,7 +181,9 @@ async def forgot_password(
 ):
     """Initiate the password reset process for a user account."""
     try:
-        return await PasswordService(session).reset_password_request(email, background_tasks)
+        return await PasswordService(session).reset_password_request(
+            email, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -169,7 +202,9 @@ async def reset_password(
 ):
     """Reset the password for a user account."""
     try:
-        return await PasswordService(session).reset_password(data, background_tasks)
+        return await PasswordService(session).reset_password(
+            data, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -189,7 +224,9 @@ async def email_address_verify(
 ):
     """Verify a user's email address using the provided token."""
     try:
-        return await AuthService(session).email_address_verify(token, background_tasks)
+        return await AuthService(session).email_address_verify(
+            token, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -208,7 +245,9 @@ async def verify_email_password_reset(
 ):
     """Verify a user's email address during password reset using the provided token."""
     try:
-        return await PasswordService(session).verify_email_address_password_reset(token, background_tasks)
+        return await PasswordService(
+            session
+        ).verify_email_address_password_reset(token, background_tasks)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -227,7 +266,9 @@ async def email_address_verify_resend(
 ):
     """Resend the email verification link to the user's email address."""
     try:
-        return await AuthService(session).email_address_verify_resend(email, background_tasks)
+        return await AuthService(session).email_address_verify_resend(
+            email, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -246,7 +287,9 @@ async def change_password(
 ):
     """Change the password for a logged-in user. This Route Need Cookie Authorization"""
     try:
-        return await PasswordService(session).change_password(authorize, data.old_password, data.new_password)
+        return await PasswordService(session).change_password(
+            authorize, data.old_password, data.new_password
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

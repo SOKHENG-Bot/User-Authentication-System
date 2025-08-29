@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException, status
@@ -10,7 +10,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.configuration.settings import settings
-from app.models.user_model import User, UserSession
+from app.models.user_model import User
+from app.services.session_service import SessionService
 from app.services.token_service import TokenService
 from app.services.util_service import UtilService
 
@@ -52,7 +53,9 @@ class SocialAuthenticationService:
         }
         # Use httpx to make async HTTP requests
         async with httpx.AsyncClient() as client:
-            google_response = await client.post("https://oauth2.googleapis.com/token", data=data, timeout=10)
+            google_response = await client.post(
+                "https://oauth2.googleapis.com/token", data=data, timeout=10
+            )
             if google_response.status_code != 200:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -85,7 +88,9 @@ class SocialAuthenticationService:
                     detail="Email not found in Google's user info.",
                 )
             # Check if the user already exists
-            statement = await self.session.execute(select(User).where(User.email == email))
+            statement = await self.session.execute(
+                select(User).where(User.email == email)
+            )
             account = statement.scalars().first()
             # If not, create a new user account
             if not account:
@@ -109,7 +114,7 @@ class SocialAuthenticationService:
                 await self.session.commit()
                 await self.session.refresh(account)
             # Generate JWT tokens for the user
-            access_token = TokenService(session=AsyncSession).generate_token(
+            access_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -122,7 +127,7 @@ class SocialAuthenticationService:
                 expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
             )
             # Generate refresh token for refresh access token
-            refresh_token = TokenService(session=AsyncSession).generate_token(
+            refresh_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -134,41 +139,9 @@ class SocialAuthenticationService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
             )
-            # Generate session token and store it in the database
-            session_token = TokenService(session=AsyncSession).generate_token(
-                data={
-                    "user_id": str(account.id),
-                    "email": account.email,
-                    "username": account.username,
-                    "role": account.role,
-                    "jti": str(uuid.uuid4()),
-                },
-                secret_key=settings.JWT_SECRET_KEY,
-                algorithm=settings.JWT_ALGORITHM,
-                expires_in=settings.SESSION_TOKEN_EXPIRE_MINUTES,
+            await SessionService(self.session).create_session(
+                account_data=account, request=request
             )
-            # Store the session token in the database
-            token_statement = await self.session.execute(select(UserSession).where(UserSession.user_id == account.id))
-            user_session = token_statement.scalars().first()
-            if not user_session:
-                user_session = UserSession(
-                    user_id=account.id,
-                    session_token=session_token,
-                    device_info=request.headers.get("User-Agent"),
-                    ip_address=request.client.host,
-                    expires_at=datetime.now(timezone.utc) + timedelta(settings.SESSION_TOKEN_EXPIRE_MINUTES),
-                    created_at=datetime.now(timezone.utc),
-                )
-                self.session.add(user_session)
-            else:
-                user_session.session_token = session_token
-                user_session.device_info = request.headers.get("User-Agent")
-                user_session.ip_address = request.client.host
-                user_session.expires_at = datetime.now(timezone.utc) + timedelta(settings.SESSION_TOKEN_EXPIRE_MINUTES)
-                self.session.add(user_session)
-            await self.session.commit()
-            await self.session.refresh(user_session)
-
             # Redirect to frontend with tokens in HttpOnly cookies
             swagger_ui_url = "/docs"
             redirect = RedirectResponse(url=swagger_ui_url)

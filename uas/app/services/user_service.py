@@ -19,11 +19,19 @@ class UserService:
         """Retrieve the profile of the current logged-in user."""
         try:
             if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            statement = await self.session.execute(select(User).where(User.email == current_user["email"]))
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Unauthorized",
+                )
+            statement = await self.session.execute(
+                select(User).where(User.email == current_user["email"])
+            )
             user = statement.scalars().first()
             if not user:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
             return user
         except HTTPException:
             raise
@@ -34,15 +42,25 @@ class UserService:
                 detail="Get account profile failed due to server down",
             ) from err
 
-    async def update_user_profile(self, data: UserUpdateProfile, current_user: User):
+    async def update_user_profile(
+        self, data: UserUpdateProfile, current_user: User
+    ):
         """Update the profile of the current logged-in user."""
         try:
             if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            statement = await self.session.execute(select(User).where(User.email == current_user["email"]))
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Unauthorized",
+                )
+            statement = await self.session.execute(
+                select(User).where(User.email == current_user["email"])
+            )
             account = statement.scalars().first()
             if not account:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
             # Update user fields
             for var, value in vars(data).items():
                 setattr(account, var, value) if value else None
@@ -62,10 +80,15 @@ class UserService:
     async def delete_account(self, account_id: int):
         """Delete the current logged-in user's account."""
         try:
-            statement = await self.session.execute(select(User).where(User.id == account_id))
+            statement = await self.session.execute(
+                select(User).where(User.id == account_id)
+            )
             account = statement.scalars().first()
             if not account:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
             await self.session.delete(account)
             await self.session.commit()
             return {"message": "Account deleted successfully."}
@@ -81,7 +104,9 @@ class UserService:
     async def get_user_sessions(self):
         """List all active sessions for the current user."""
         try:
-            statement = await self.session.execute(select(User).where(User.is_active))
+            statement = await self.session.execute(
+                select(User).where(User.is_active)
+            )
             accounts = statement.scalars().all()
             if not accounts:
                 raise HTTPException(
@@ -97,7 +122,3 @@ class UserService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Get session failed due to server down",
             ) from err
-
-    async def logout_all_devices(self, current_user: User):
-        """Delete all sessions belong to current_user"""
-        pass

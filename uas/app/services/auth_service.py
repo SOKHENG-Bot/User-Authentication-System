@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import BackgroundTasks, Depends, HTTPException, status
+from fastapi import BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import EmailStr
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from app.configuration.settings import settings
 from app.models.user_model import User, UserSession
 from app.schemas.user_schemas import UserRegister
 from app.services.email_service import EmailService
+from app.services.session_service import SessionService
 from app.services.token_service import TokenService
 from app.services.util_service import UtilService
 
@@ -30,8 +31,11 @@ class AuthService:
         """Protected route using HttpOnly cookie for authentication."""
         try:
             if not token:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-            payload = TokenService(session=AsyncSession).validate_token(
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                )
+            payload = TokenService(self.session).validate_token(
                 token=token,
                 secret_key=settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
@@ -54,8 +58,11 @@ class AuthService:
         """Protected route using HttpOnly cookie for authentication."""
         try:
             if not token:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-            payload = TokenService(session=AsyncSession).validate_token(
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                )
+            payload = TokenService(self.session).validate_token(
                 token=token,
                 secret_key=settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
@@ -96,7 +103,7 @@ class AuthService:
             self.session.add(new_account)
             await self.session.commit()
             await self.session.refresh(new_account)
-            verifification_token = TokenService(session=AsyncSession).generate_token(
+            verifification_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(new_account.id),
                     "email": new_account.email,
@@ -107,7 +114,9 @@ class AuthService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES,
             )
-            await EmailService().send_verification_email(new_account, verifification_token, background_tasks)
+            await EmailService().send_verification_email(
+                new_account, verifification_token, background_tasks
+            )
             return new_account
 
         except HTTPException:
@@ -116,13 +125,13 @@ class AuthService:
             logger.error(f"Error during operation: {err!s}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Account registration failed due to server error.",
+                detail="Account registration failed.",
             ) from err
 
     async def email_address_verify(self, token: str, background_tasks: BackgroundTasks) -> User:
         """Verify a user's email address using the provided token."""
         try:
-            payload = TokenService(session=AsyncSession).validate_token(
+            payload = TokenService(self.session).validate_token(
                 token=token,
                 secret_key=settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
@@ -175,7 +184,7 @@ class AuthService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email is already verified.",
                 )
-            verifification_token = TokenService(session=AsyncSession).generate_token(
+            verifification_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -186,7 +195,9 @@ class AuthService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES,
             )
-            await EmailService().send_verification_email(account, verifification_token, background_tasks)
+            await EmailService().send_verification_email(
+                account, verifification_token, background_tasks
+            )
             return account
         except HTTPException:
             raise
@@ -224,7 +235,7 @@ class AuthService:
                     detail="Account is inactive or email not verified.",
                 )
             account.last_login = datetime.now(timezone.utc)
-            access_token = TokenService(session=AsyncSession).generate_token(
+            access_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -236,7 +247,7 @@ class AuthService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
             )
-            refresh_token = TokenService(session=AsyncSession).generate_token(
+            refresh_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -251,7 +262,8 @@ class AuthService:
                 user_id=account.id,
                 session_token=refresh_token,
                 created_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
             )
             self.session.add(user_session)
             self.session.add(account)
@@ -274,20 +286,19 @@ class AuthService:
     async def login_and_store_cookie(
         self,
         response: Response,
+        request: Request,
         data: OAuth2PasswordRequestForm = Depends(),
     ):
         """Authenticate a user and store JWT tokens in HttpOnly cookies."""
         try:
             statement = await self.session.execute(select(User).where(User.email == data.username))
             account = statement.scalars().first()
-
             if not account:
                 logger.warning(f"Login attempt with invalid email: {data.username}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid email or password.",
                 )
-
             # Verify password
             if not UtilService().verify_password(data.password, account.password_hash):
                 logger.warning(f"Invalid password attempt for email: {data.username}")
@@ -295,7 +306,6 @@ class AuthService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid email or password.",
                 )
-
             # Check status
             if not account.is_active or not account.is_verified:
                 logger.warning(f"Inactive/unverified account login attempt: {data.username}")
@@ -303,37 +313,13 @@ class AuthService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is inactive or email not verified.",
                 )
-
             # Update last login
             account.last_login = datetime.now(timezone.utc)
             self.session.add(account)
             await self.session.commit()
             await self.session.refresh(account)
-
-            # Generate tokens for session storage
-            session_token = TokenService(session=AsyncSession).generate_token(
-                data={
-                    "user_id": str(account.id),
-                    "email": account.email,
-                    "username": account.username,
-                    "jti": str(uuid.uuid4()),
-                },
-                secret_key=settings.JWT_SECRET_KEY,
-                algorithm=settings.JWT_ALGORITHM,
-                expires_in=30,  # seconds
-            )
-            user_session = UserSession(
-                user_id=account.id,
-                session_token=session_token,
-                created_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
-            )
-            self.session.add(user_session)
-            await self.session.commit()
-            await self.session.refresh(account)
-
             # Generate access and refresh tokens cookiea
-            access_token = TokenService(session=AsyncSession).generate_token(
+            access_token = TokenService(self.session).generate_token(
                 data={
                     "user_id": str(account.id),
                     "email": account.email,
@@ -345,25 +331,43 @@ class AuthService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
             )
-
+            # Generate refresh token for refresh access token
+            refresh_token = TokenService(self.session).generate_token(
+                data={
+                    "user_id": str(account.id),
+                    "email": account.email,
+                    "username": account.username,
+                    "role": account.role,
+                    "jti": str(uuid.uuid4()),
+                },
+                secret_key=settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM,
+                expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
+            )
+            await SessionService(self.session).create_session(account_data=account, request=request)
             # Store tokens in HttpOnly cookies
             response.set_cookie(
                 key="access_token",
                 value=access_token,
                 httponly=True,
-                secure=True,
+                # secure=True,
                 samesite="Lax",
                 max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             )
-
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,
+                # secure=True,
+                samesite="Lax",
+                max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+            )
             return {
                 "message": "Login successful",
-                "access_token_cookie": {
-                    "token": access_token,
-                },
+                "access_token_cookie": {"token": access_token},
+                "refresh_token_cookie": {"token": refresh_token},
                 "token_type": "Bearer",
             }
-
         except HTTPException:
             raise
         except Exception as err:

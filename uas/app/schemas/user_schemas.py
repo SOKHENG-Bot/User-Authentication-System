@@ -13,7 +13,9 @@ class UserRegister(BaseModel):
     @staticmethod
     def validate_email(validate: str) -> str:
         if validate.endswith("@example.com"):
-            raise ValueError("Registration using example.com emails is not allowed.")
+            raise ValueError(
+                "Registration using example.com emails is not allowed."
+            )
         return validate
 
     # Sanitize email to prevent leading/trailing spaces

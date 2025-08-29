@@ -16,35 +16,73 @@ class TokenService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    def generate_token(self, data: dict, secret_key: str, algorithm: str, expires_in: int) -> str:
+    def generate_token(
+        self, data: dict, secret_key: str, algorithm: str, expires_in: int
+    ) -> str:
         """Generate a JWT token."""
         payload = data.copy()
-        payload.update({"exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)})
+        payload.update({
+            "exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        })
         token = jwt.encode(data, secret_key, algorithm=algorithm)
         return token
 
-    def validate_token(self, token: str, secret_key: str, algorithms: list) -> dict:
+    def validate_token(
+        self, token: str, secret_key: str, algorithms: list
+    ) -> dict:
         """Validate a JWT token and return the payload."""
         payload = jwt.decode(token, secret_key, algorithms=algorithms)
         return payload
 
-    async def revoke_token(self, user_id: int, response: Response, all_sessions: bool = False):
-        if all_sessions:
-            await self.session.execute(delete(UserSession).where(UserSession.user_id == user_id))
-        else:
-            # Logic to revoke only the current session's token
-            # This requires identifying the current session, which might involve
-            # extracting a token from the request context or similar.
-            pass
+    async def revoke_token(self, current_user: dict, response: Response):
+        account_id = current_user["user_id"]
+        account_statement = await self.session.execute(
+            select(User).where(User.id == int(account_id))
+        )
+        account = account_statement.scalars().first()
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="User not found"
+            )
+        account.is_active = False
+        self.session.add(account)
+        await self.session.commit()
+        await self.session.refresh(account)
 
+        await self.session.execute(
+            delete(UserSession).where(UserSession.id == int(account_id))
+        )
         await self.session.commit()
         # Clear the token cookie
         response.delete_cookie(key="access_token")
         response.delete_cookie(key="refresh_token")
-        return {"message": "Successfully logged out."}
+        return {"message": "Successfully signout."}
 
-    def blacklist_token(self):
-        pass
+    async def revoke_token_all_device(
+        self, current_user: dict, response: Response
+    ):
+        account_id = current_user["user_id"]
+        account_statement = await self.session.execute(
+            select(User).where(User.id == int(account_id))
+        )
+        account = account_statement.scalars().first()
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="User not found"
+            )
+        account.is_active = False
+        self.session.add(account)
+        await self.session.commit()
+        await self.session.refresh(account)
+
+        await self.session.execute(
+            delete(UserSession).where(UserSession.user_id == int(account_id))
+        )
+        await self.session.commit()
+        # Clear the token cookie
+        response.delete_cookie(key="access_token")
+        response.delete_cookie(key="refresh_token")
+        return {"message": "Successfully signout."}
 
     async def get_access_token_from_cookie(self, request: Request):
         """Extract the JWT token from HttpOnly cookies."""
@@ -60,21 +98,37 @@ class TokenService:
             return None
         return refresh_token
 
-    async def refresh_access_token(self, current_user: dict, response: Response):
+    async def refresh_access_token(
+        self, current_user: dict, response: Response
+    ):
         account_id = current_user["user_id"]
-        account_statement = await self.session.execute(select(User).where(User.id == int(account_id)))
+        account_statement = await self.session.execute(
+            select(User).where(User.id == int(account_id))
+        )
         account = account_statement.scalars().first()
         if not account:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid refresh token")
-        session_statement = await self.session.execute(select(UserSession).where(UserSession.id == int(account_id)))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid refresh token",
+            )
+
+        session_statement = await self.session.execute(
+            select(UserSession).where(UserSession.user_id == int(account_id))
+        )
         session_account = session_statement.scalars().first()
         if not session_account:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session not found")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session not found",
+            )
         if session_account.expires_at < datetime.now(timezone.utc):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session token expired")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session token expired",
+            )
 
         # Generate JWT tokens for the user
-        access_token = TokenService(session=AsyncSession).generate_token(
+        access_token = TokenService(self.session).generate_token(
             data={
                 "user_id": str(account.id),
                 "email": account.email,
@@ -87,7 +141,7 @@ class TokenService:
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         )
         # Generate refresh token for refresh access token
-        refresh_token = TokenService(session=AsyncSession).generate_token(
+        refresh_token = TokenService(self.session).generate_token(
             data={
                 "user_id": str(account.id),
                 "email": account.email,
