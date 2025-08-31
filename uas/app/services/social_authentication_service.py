@@ -88,9 +88,7 @@ class SocialAuthenticationService:
                     detail="Email not found in Google's user info.",
                 )
             # Check if the user already exists
-            statement = await self.session.execute(
-                select(User).where(User.email == email)
-            )
+            statement = await self.session.execute(select(User).where(User.email == email))
             account = statement.scalars().first()
             # If not, create a new user account
             if not account:
@@ -139,9 +137,7 @@ class SocialAuthenticationService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
             )
-            await SessionService(self.session).create_session(
-                account_data=account, request=request
-            )
+            await SessionService(self.session).create_session(account_data=account, request=request)
             # Redirect to frontend with tokens in HttpOnly cookies
             swagger_ui_url = "/docs"
             redirect = RedirectResponse(url=swagger_ui_url)

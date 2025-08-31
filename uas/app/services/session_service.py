@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Request
-from sqlalchemy import select
+from fastapi import HTTPException, Request, status
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.configuration.settings import settings
-from app.models.user_model import UserSession
+from app.models.user_model import User, UserSession
 from app.services.token_service import TokenService
 
 
@@ -54,23 +54,60 @@ class SessionService:
             user_session.expires_at = datetime.now(timezone.utc) + timedelta(
                 settings.SESSION_TOKEN_EXPIRE_MINUTES
             )
-            self.session.add(user_session)
+        self.session.add(user_session)
         await self.session.commit()
         await self.session.refresh(user_session)
         return user_session
 
-    def validate_session(self):
-        """Validate an existing user session."""
-        pass
+    async def validate_session(self, account_data: dict):
+        """Validate an existing user session. Use this for more secure with authorization with session token in database"""
+        statement = await self.session.execute(
+            select(UserSession).where(UserSession.user_id == int(account_data.id))
+        )
+        account_session = statement.scalars().first()
+        if not account_session:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid session token.",
+            )
+        if account_session.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please login again.",
+            )
+        return account_session
 
-    def extend_session(self):
+    async def extend_session(self, account_id: int, extended_day: int):
         """Extend the duration of an active session."""
-        pass
+        new_expires_at = datetime.now(timezone.utc) + timedelta(days=extended_day)
+        await self.session.execute(
+            update(UserSession)
+            .where(UserSession.user_id == account_id)
+            .values(expires_at=new_expires_at)
+        )
+        await self.session.commit()
+        return {
+            "account_id": account_id,
+            "new_expiry": new_expires_at,
+        }
 
-    def terminate_session(self):
-        """Terminate an active user session."""
-        pass
+    async def terminate_session(self, account_id: int):
+        """Terminate an active user session. only single device"""
+        await self.session.execute(delete(UserSession).where(UserSession.id == account_id))
+        await self.session.commit()
+        return {"Message": f"You have terminated account session from account ID: {account_id}"}
 
-    def get_active_sessions(self):
-        """Retrieve all active sessions for a user."""
-        pass
+    async def get_active_sessions(self):
+        """Retrieve all active sessions for a user. for all device"""
+        account_statement = await self.session.execute(select(User).where(User.is_active))
+        account = account_statement.scalars().first()
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Do not have account active",
+            )
+        session_statement = await self.session.execute(
+            select(UserSession).where(UserSession.user_id == int(account.id))
+        )
+        session_account = session_statement.scalars().first()
+        return {"active_sessions": {session_account}}

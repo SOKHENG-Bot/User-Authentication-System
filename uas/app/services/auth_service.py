@@ -52,7 +52,6 @@ class AuthService:
 
     async def get_current_user_via_refresh_cookie(
         self,
-        response: Response,
         token: str = Depends(TokenService(session=AsyncSession).get_refresh_token_from_cookie),
     ) -> dict:
         """Protected route using HttpOnly cookie for authentication."""

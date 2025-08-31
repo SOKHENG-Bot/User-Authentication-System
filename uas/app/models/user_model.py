@@ -44,7 +44,7 @@ class User(Base):
     two_fa_enabled = Column(Boolean, default=False)
     two_fa_secret = Column(String(255), nullable=True)
 
-    sessions = relationship("UserSession", back_populates="user")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserSession(Base):
