@@ -11,7 +11,6 @@ class Settings(BaseSettings):
 
     # Database configuration
     POSTGRESQL_DATABASE_URL: str
-
     # JWT configuration
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str
@@ -46,4 +45,4 @@ class Settings(BaseSettings):
         case_sensitive = True  # Make environment variable names case-sensitive
 
 
-settings = Settings()  # Create an instance of the settings
+settings = Settings()  # type: ignore # Create an instance of the settings

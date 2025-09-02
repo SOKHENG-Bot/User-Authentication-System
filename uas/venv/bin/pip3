@@ -1,4 +1,4 @@
-#!/home/lenovo/myproject/uas/venv/bin/python3
+#!/home/lenvo/User-Authentication-System/uas/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

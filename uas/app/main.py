@@ -2,14 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.configuration.database import Base, engine
+from app.configuration.database import Base, async_engine
 from app.controllers.user_controller import admin_router, auth_router, user_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup code
-    async with engine.begin() as conn:
+    async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
 

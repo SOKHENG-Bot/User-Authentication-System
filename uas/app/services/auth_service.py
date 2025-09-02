@@ -2,13 +2,6 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import BackgroundTasks, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import EmailStr
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import Response
-
 from app.configuration.settings import settings
 from app.models.user_model import User, UserSession
 from app.schemas.user_schemas import UserRegister
@@ -16,6 +9,12 @@ from app.services.email_service import EmailService
 from app.services.session_service import SessionService
 from app.services.token_service import TokenService
 from app.services.util_service import UtilService
+from fastapi import BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import EmailStr
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,9 @@ class AuthService:
 
     async def get_current_user_via_cookie(
         self,
-        token: str = Depends(TokenService(session=AsyncSession).get_access_token_from_cookie),
+        token: str = Depends(
+            TokenService(session=AsyncSession).get_access_token_from_cookie
+        ),
     ) -> dict:
         """Protected route using HttpOnly cookie for authentication."""
         try:
@@ -52,7 +53,9 @@ class AuthService:
 
     async def get_current_user_via_refresh_cookie(
         self,
-        token: str = Depends(TokenService(session=AsyncSession).get_refresh_token_from_cookie),
+        token: str = Depends(
+            TokenService(session=AsyncSession).get_refresh_token_from_cookie
+        ),
     ) -> dict:
         """Protected route using HttpOnly cookie for authentication."""
         try:
@@ -76,11 +79,15 @@ class AuthService:
                 detail="Could not validate credentials.",
             ) from err
 
-    async def sigup_account(self, data: UserRegister, background_tasks: BackgroundTasks) -> User:
+    async def sigup_account(
+        self, data: UserRegister, background_tasks: BackgroundTasks
+    ) -> User:
         """Register a new user account and send a verification email."""
         try:
             existing_account = await self.session.execute(
-                select(User).where((User.email == data.email) | (User.username == data.username))
+                select(User).where(
+                    (User.email == data.email) | (User.username == data.username)
+                )
             )
             if existing_account.scalars().first():
                 logging.warning("Attempt to register with existing email or username.")
@@ -127,7 +134,9 @@ class AuthService:
                 detail="Account registration failed.",
             ) from err
 
-    async def email_address_verify(self, token: str, background_tasks: BackgroundTasks) -> User:
+    async def email_address_verify(
+        self, token: str, background_tasks: BackgroundTasks
+    ) -> User:
         """Verify a user's email address using the provided token."""
         try:
             payload = TokenService(self.session).validate_token(
@@ -142,7 +151,9 @@ class AuthService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid token payload.",
                 )
-            statement = await self.session.execute(select(User).where(User.email == account_email))
+            statement = await self.session.execute(
+                select(User).where(User.email == account_email)
+            )
             account = statement.scalars().first()
             account.is_verified = True
             account.is_active = True
@@ -151,7 +162,9 @@ class AuthService:
             self.session.add(account)
             await self.session.commit()
             await self.session.refresh(account)
-            await EmailService().send_confirmation_verification_email(account, background_tasks)
+            await EmailService().send_confirmation_verification_email(
+                account, background_tasks
+            )
             return account
         except HTTPException:
             raise
@@ -169,10 +182,14 @@ class AuthService:
     ) -> User:
         """Resend the email verification link to the user's email address."""
         try:
-            statement = await self.session.execute(select(User).where(User.email == email))
+            statement = await self.session.execute(
+                select(User).where(User.email == email)
+            )
             account = statement.scalars().first()
             if not account:
-                logger.warning(f"Resend verification requested for non-existent email: {email}")
+                logger.warning(
+                    f"Resend verification requested for non-existent email: {email}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="No account found with the provided email.",
@@ -213,7 +230,9 @@ class AuthService:
     ) -> User:
         """Authenticate a user and return access and access tokens."""
         try:
-            statement = await self.session.execute(select(User).where(User.email == data.username))
+            statement = await self.session.execute(
+                select(User).where(User.email == data.username)
+            )
             account = statement.scalars().first()
             if not account:
                 logger.warning(f"Login attempt with invalid email: {data.email}")
@@ -228,7 +247,9 @@ class AuthService:
                     detail="Invalid email or password.",
                 )
             if not account.is_active or not account.is_verified:
-                logger.warning(f"Inactive or unverified account login attempt: {data.email}")
+                logger.warning(
+                    f"Inactive or unverified account login attempt: {data.email}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is inactive or email not verified.",
@@ -290,7 +311,9 @@ class AuthService:
     ):
         """Authenticate a user and store JWT tokens in HttpOnly cookies."""
         try:
-            statement = await self.session.execute(select(User).where(User.email == data.username))
+            statement = await self.session.execute(
+                select(User).where(User.email == data.username)
+            )
             account = statement.scalars().first()
             if not account:
                 logger.warning(f"Login attempt with invalid email: {data.username}")
@@ -307,7 +330,9 @@ class AuthService:
                 )
             # Check status
             if not account.is_active or not account.is_verified:
-                logger.warning(f"Inactive/unverified account login attempt: {data.username}")
+                logger.warning(
+                    f"Inactive/unverified account login attempt: {data.username}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is inactive or email not verified.",
@@ -343,7 +368,9 @@ class AuthService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
             )
-            await SessionService(self.session).create_session(account_data=account, request=request)
+            await SessionService(self.session).create_session(
+                account_data=account, request=request
+            )
             # Store tokens in HttpOnly cookies
             response.set_cookie(
                 key="access_token",

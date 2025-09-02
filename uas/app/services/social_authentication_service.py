@@ -1,19 +1,20 @@
+import random
 import uuid
 from datetime import datetime, timezone
 
 import httpx
+from app.configuration.settings import settings
+from app.models.user_model import User
+from app.services.logging_service import LoggingService
+from app.services.session_service import SessionService
+from app.services.token_service import TokenService
+from app.services.util_service import UtilService
 from fastapi import HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from starlette.requests import Request
 from starlette.responses import Response
-
-from app.configuration.settings import settings
-from app.models.user_model import User
-from app.services.session_service import SessionService
-from app.services.token_service import TokenService
-from app.services.util_service import UtilService
 
 
 class SocialAuthenticationService:
@@ -81,14 +82,20 @@ class SocialAuthenticationService:
             user_info = user_info_response.json()
             # Process user info and create or retrieve user account
             email = user_info.get("email")
-            username = user_info.get("name") or email.split("@")[0]
+            username_base = user_info.get("name") or email.split("@")[0]
+
+            # Append a random 4-digit number
+            random_number = random.randint(1000, 9999)
+            username = f"{username_base}_{random_number}"
             if not email:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email not found in Google's user info.",
                 )
             # Check if the user already exists
-            statement = await self.session.execute(select(User).where(User.email == email))
+            statement = await self.session.execute(
+                select(User).where(User.email == email)
+            )
             account = statement.scalars().first()
             # If not, create a new user account
             if not account:
@@ -137,7 +144,12 @@ class SocialAuthenticationService:
                 algorithm=settings.JWT_ALGORITHM,
                 expires_in=settings.REFRESH_TOKEN_EXPIRE_MINUTES,
             )
-            await SessionService(self.session).create_session(account_data=account, request=request)
+            await SessionService(self.session).create_session(
+                account_data=account, request=request
+            )
+            await LoggingService(self.session).log_authentication_event(
+                account_data=account, request=request, action="OuathGoogle"
+            )
             # Redirect to frontend with tokens in HttpOnly cookies
             swagger_ui_url = "/docs"
             redirect = RedirectResponse(url=swagger_ui_url)

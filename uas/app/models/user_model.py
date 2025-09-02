@@ -1,3 +1,4 @@
+from app.configuration.database import Base
 from sqlalchemy import (
     Boolean,
     Column,
@@ -9,8 +10,6 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import relationship
-
-from app.configuration.database import Base
 
 
 class User(Base):
@@ -44,7 +43,12 @@ class User(Base):
     two_fa_enabled = Column(Boolean, default=False)
     two_fa_secret = Column(String(255), nullable=True)
 
-    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship(
+        "UserSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    logs = relationship(
+        "UserActivityLog", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserSession(Base):
@@ -54,7 +58,7 @@ class UserSession(Base):
 
     __tablename__ = "user_sessions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     session_token = Column(Text, unique=True, nullable=False, index=True)
     device_info = Column(Text, nullable=True)
@@ -63,3 +67,22 @@ class UserSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="sessions")
+
+
+class UserActivityLog(Base):
+    """
+    User activicty log model
+    """
+
+    __tablename__ = "user_activity_logs"
+
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_email = Column(String(255), unique=True, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    ip_address = Column(String(45), nullable=True)
+    device_info = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    count = Column(Integer, default=1)
+
+    user = relationship("User", back_populates="logs")

@@ -1,11 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.requests import Request
-from starlette.responses import Response
-
-from app.configuration.database import get_db
+from app.configuration.database import get_async_session
 from app.schemas.user_schemas import (
     LoginProfile,
     PasswordChange,
@@ -14,8 +7,10 @@ from app.schemas.user_schemas import (
     UserRegister,
     UserUpdateProfile,
 )
+from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
+from app.services.logging_service import LoggingService
 from app.services.password_service import PasswordService
 from app.services.session_service import SessionService
 from app.services.social_authentication_service import (
@@ -23,6 +18,12 @@ from app.services.social_authentication_service import (
 )
 from app.services.token_service import TokenService
 from app.services.user_service import UserService
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
+from starlette.responses import Response
 
 auth_router = APIRouter()
 user_router = APIRouter()
@@ -30,8 +31,10 @@ admin_router = APIRouter()
 
 admin_dependency = Depends(AuthorizationService(session=AsyncSession).check_permissions)
 user_dependency = Depends(AuthService(session=AsyncSession).get_current_user_via_cookie)
-refresh_dependency = Depends(AuthService(session=AsyncSession).get_current_user_via_refresh_cookie)
-db_dependency = Depends(get_db)
+refresh_dependency = Depends(
+    AuthService(session=AsyncSession).get_current_user_via_refresh_cookie
+)
+db_dependency = Depends(get_async_session)
 
 
 @auth_router.post(
@@ -80,7 +83,9 @@ async def oauth_google_callback(
 ):
     """Handle Google OAuth2 callback and return JWT tokens."""
     try:
-        return await SocialAuthenticationService(session).oauth_google_callback(request, response)
+        return await SocialAuthenticationService(session).oauth_google_callback(
+            request, response
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,7 +180,9 @@ async def forgot_password(
 ):
     """Initiate the password reset process for a user account."""
     try:
-        return await PasswordService(session).reset_password_request(email, background_tasks)
+        return await PasswordService(session).reset_password_request(
+            email, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -254,7 +261,9 @@ async def email_address_verify_resend(
 ):
     """Resend the email verification link to the user's email address."""
     try:
-        return await AuthService(session).email_address_verify_resend(email, background_tasks)
+        return await AuthService(session).email_address_verify_resend(
+            email, background_tasks
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -387,9 +396,10 @@ async def delete_account(
 @admin_router.post("/get-active-session", status_code=status.HTTP_200_OK)
 async def get_active_session(
     session=db_dependency,
+    authorize=user_dependency,
 ):
     try:
-        return await SessionService(session).get_active_sessions()
+        return await SessionService(session).get_active_sessions(authorize)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -403,7 +413,109 @@ async def assign_role(
 ):
     """Assing new role to account"""
     try:
-        return await AuthorizationService(session).assign_role(account_id, new_role, authorize)
+        return await AuthorizationService(session).assign_role(
+            account_id, new_role, authorize
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/get-all-account", status_code=status.HTTP_200_OK)
+async def get_all_account(session=db_dependency, authorize=user_dependency):
+    try:
+        return await AdminService(session).get_all_accounts(authorize)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/suspend-account", status_code=status.HTTP_200_OK)
+async def suspend_account(
+    account_id: int, session=db_dependency, authorize=user_dependency
+):
+    try:
+        return await AdminService(session).suspend_account(account_id, authorize)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/unsuspend-account", status_code=status.HTTP_200_OK)
+async def unsuspend_account(
+    account_id: int, session=db_dependency, authorize=user_dependency
+):
+    try:
+        return await AdminService(session).unsuspend_account(account_id, authorize)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/reset-password-by-admin", status_code=status.HTTP_200_OK)
+async def reset_password_by_admin(
+    account_id: int, new_password: str, session=db_dependency, authorize=user_dependency
+):
+    try:
+        return await AdminService(session).reset_account_password_admin(
+            account_id, new_password, authorize
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/get-account-logs", status_code=status.HTTP_200_OK)
+async def get_account_logs(
+    account_id: int, session=db_dependency, authorize=user_dependency
+):
+    try:
+        return await LoggingService(session).get_user_activity_logs(
+            account_id, authorize
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/get-log-report", status_code=status.HTTP_200_OK)
+async def get_log_report(
+    account_id: int, session=db_dependency, authorize=user_dependency
+):
+    try:
+        return await LoggingService(session).generate_security_report(
+            account_id, authorize
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@admin_router.post("/bulk-account", status_code=status.HTTP_200_OK)
+async def bulk_account(
+    account_ids: list[int],
+    action: str,
+    session=db_dependency,
+    authorize=user_dependency,
+):
+    try:
+        return await AdminService(session).bulk_account_actions(
+            account_ids, action, authorize
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

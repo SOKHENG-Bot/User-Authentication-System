@@ -1,10 +1,9 @@
 import logging
 
+from app.models.user_model import User
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.user_model import User
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ class AuthorizationService:
     ):
         """Check if a user has the required permissions for an action."""
         account_role = account_data["role"]
-        if account_role != "admin":
+        if account_role not in ["admin", "user"]:
             return False
         return True
 
@@ -31,14 +30,18 @@ class AuthorizationService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="This operation is allow only Admin",
             )
-        statement = await self.session.execute(select(User).where(User.id == account_id))
+        statement = await self.session.execute(
+            select(User).where(User.id == account_id)
+        )
         account = statement.scalars().first()
         if not account:
             return None
         account.role = new_role
         self.session.add(account)
         await self.session.commit()
-        return {"Message": f"Account with email {account.email} now assigned to {new_role} "}
+        return {
+            "Message": f"Account with email {account.email} now assigned to {new_role} "
+        }
 
     def create_custom_permission(self):
         """Create a custom permission for a user or role."""

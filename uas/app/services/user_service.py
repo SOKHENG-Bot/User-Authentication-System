@@ -1,13 +1,12 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user_model import User
 from app.schemas.user_schemas import UserUpdateProfile
 from app.services.authorization_service import AuthorizationService
+from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 admin_dependency = Depends(AuthorizationService(session=AsyncSession).check_permissions)
@@ -80,13 +79,17 @@ class UserService:
     async def delete_account(self, account_id: int, current_user: dict):
         """Delete the current logged-in user's account."""
         try:
-            permission = await AuthorizationService(self.session).check_permissions(current_user)
+            permission = await AuthorizationService(self.session).check_permissions(
+                current_user
+            )
             if not permission:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="This operation is allow only Admin",
                 )
-            statement = await self.session.execute(select(User).where(User.id == int(account_id)))
+            statement = await self.session.execute(
+                select(User).where(User.id == int(account_id))
+            )
             account = statement.scalars().first()
             if not account:
                 raise HTTPException(
