@@ -2,24 +2,28 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from app.configuration.settings import settings
+from app.models.user_model import User, UserSession
+from app.services.ad_security_service import AdvancedSecurityService
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.configuration.settings import settings
-from app.models.user_model import User, UserSession
-
 
 class TokenService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    def generate_token(self, data: dict, secret_key: str, algorithm: str, expires_in: int) -> str:
+    def generate_token(
+        self, data: dict, secret_key: str, algorithm: str, expires_in: int
+    ) -> str:
         """Generate a JWT token."""
         payload = data.copy()
-        payload.update({"exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)})
+        payload.update(
+            {"exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in)}
+        )
         token = jwt.encode(data, secret_key, algorithm=algorithm)
         return token
 
@@ -35,12 +39,16 @@ class TokenService:
         )
         account = account_statement.scalars().first()
         if not account:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="User not found"
+            )
         self.session.add(account)
         await self.session.commit()
         await self.session.refresh(account)
 
-        await self.session.execute(delete(UserSession).where(UserSession.id == int(account_id)))
+        await self.session.execute(
+            delete(UserSession).where(UserSession.id == int(account_id))
+        )
         await self.session.commit()
         # Clear the token cookie
         response.delete_cookie(key="access_token")
@@ -54,7 +62,9 @@ class TokenService:
         )
         account = account_statement.scalars().first()
         if not account:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="User not found"
+            )
         self.session.add(account)
         await self.session.commit()
         await self.session.refresh(account)
@@ -84,6 +94,9 @@ class TokenService:
     async def refresh_access_token(self, current_user: dict, response: Response):
         from app.services.session_service import SessionService
 
+        await AdvancedSecurityService(self).check_rate_limit(
+            account_email=current_user["email"]
+        )
         account_id = current_user["user_id"]
         account_statement = await self.session.execute(
             select(User).where(User.id == int(account_id))

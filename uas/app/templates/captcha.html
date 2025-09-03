@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete CAPTCHA</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+</head>
+<body>
+    <h2>Complete CAPTCHA to get token</h2>
+    <form id="captchaForm">
+        <input type="hidden" id="email" value="USER_EMAIL_HERE">
+        <div class="g-recaptcha" data-sitekey="YOUR_SITE_KEY"></div>
+        <button type="submit">Get Token</button>
+    </form>
+
+    <script>
+        document.getElementById("captchaForm").addEventListener("submit", function(e){
+            e.preventDefault();
+            const token = grecaptcha.getResponse(); // This is the captcha token
+            alert("Your CAPTCHA token: " + token + "\nPaste this into Swagger");
+        });
+    </script>
+</body>
+</html>

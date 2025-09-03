@@ -171,15 +171,3 @@ class SocialAuthenticationService:
                 max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
             )
             return redirect
-
-    def link_social_account(self):
-        """Link a social account to the current user."""
-        pass
-
-    def unlink_social_account(self):
-        """Unlink a social account from the current user."""
-        pass
-
-    def get_social_accounts(self):
-        """Get linked social accounts for the current user."""
-        pass

@@ -39,10 +39,6 @@ class User(Base):
     locked_until = Column(DateTime, nullable=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
 
-    # 2FA fields
-    two_fa_enabled = Column(Boolean, default=False)
-    two_fa_secret = Column(String(255), nullable=True)
-
     sessions = relationship(
         "UserSession", back_populates="user", cascade="all, delete-orphan"
     )

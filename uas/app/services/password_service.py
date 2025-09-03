@@ -1,17 +1,16 @@
 import logging
 import uuid
 
-from fastapi import BackgroundTasks, HTTPException, status
-from pydantic import EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-
 from app.configuration.settings import settings
 from app.models.user_model import User
 from app.schemas.user_schemas import PasswordReset
 from app.services.email_service import EmailService
 from app.services.token_service import TokenService
 from app.services.util_service import UtilService
+from fastapi import BackgroundTasks, HTTPException, status
+from pydantic import EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +105,7 @@ class PasswordService:
         except HTTPException:
             raise
         except Exception as err:
-            logger.error(
-                f"Error during password reset token verification: {err!s}"
-            )
+            logger.error(f"Error during password reset token verification: {err!s}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Token verification failed.",
@@ -122,9 +119,7 @@ class PasswordService:
         """Reset the password for a user account."""
         try:
             if data.new_password != data.confirm_password:
-                logger.warning(
-                    "New password and confirm password do not match."
-                )
+                logger.warning("New password and confirm password do not match.")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="New password and confirm password do not match.",
@@ -175,9 +170,7 @@ class PasswordService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="No account found with the provided email.",
                 )
-            if not UtilService().verify_password(
-                old_password, account.password_hash
-            ):
+            if not UtilService().verify_password(old_password, account.password_hash):
                 logger.warning("Old password does not match.")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

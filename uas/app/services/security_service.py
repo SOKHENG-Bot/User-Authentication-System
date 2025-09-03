@@ -1,31 +1,58 @@
+from datetime import datetime, timedelta
+
+from app.models.user_model import User
+from app.services.authorization_service import AuthorizationService
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
 class SecurityService:
-    def __init__(self):
-        pass
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
-    def enable_2fa(self):
-        """Enable two-factor authentication for a user."""
-        pass
+    async def record_failed_login_attempts(self, account: dict):
+        """
+        Increment failed login attempts in DB.
+        Lock account if attempts exceed threshold.
+        """
+        account.failed_login_attempts += 1
+        await self.session.commit()
 
-    def verify_2fa_code(self):
-        """Verify a provided 2FA code for a user."""
-        pass
+        if account.failed_login_attempts >= 5:
+            await self.lock_account(account)
 
-    def generate_2fa_backup_codes(self):
-        """Generate backup codes for 2FA."""
-        pass
-
-    def lock_account(self):
+    async def lock_account(self, account: dict):
         """Lock a user account after multiple failed login attempts."""
-        pass
+        account.locked_until = datetime.utcnow() + timedelta(
+            minutes=15
+        )  # 15-minute lock
+        await self.session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account locked due to multiple failed login attempts. Try again later.",
+        )
+        return account
 
-    def unlock_account(self):
+    async def unlock_account(self, account_id: int, current_user: dict):
         """Unlock a previously locked user account."""
-        pass
-
-    def track_failed_login_attempts(self):
-        """Track and log failed login attempts for a user."""
-        pass
-
-    def check_suspicious_activity(self):
-        """Check for suspicious activity on a user account."""
-        pass
+        permission = await AuthorizationService(self.session).check_permissions(
+            current_user
+        )
+        if not permission:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="This operation is allow only Admin",
+            )
+        statement = await self.session.execute(
+            select(User).where(User.id == account_id)
+        )
+        account = statement.scalars().first()
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Account locked due to multiple failed login attempts. Try again later.",
+            )
+        account.locked_until = datetime.utcnow()
+        await self.session.commit()
+        return account

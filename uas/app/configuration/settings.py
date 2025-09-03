@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str
     GOOGLE_CLIENT_SECRET: str
 
+    # Recaptcha
+    RECAPTCHA_SITE_KEY: str
+    RECAPTCHA_SECRET_KEY: str
+
     # Frontend URL
     FRONTEND_URL: str
 

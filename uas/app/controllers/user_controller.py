@@ -331,24 +331,6 @@ async def update_profile(
         ) from e
 
 
-@auth_router.post(
-    "/enable-2fa",
-    status_code=status.HTTP_200_OK,
-)
-async def enable_2fa(authorize=user_dependency):
-    """Enable two-factor authentication for the current user. This Route Need Cookie Authorization"""
-    pass
-
-
-@auth_router.post(
-    "/verify-2fa",
-    status_code=status.HTTP_200_OK,
-)
-async def verify_2fa(authorize=user_dependency):
-    """Verify the 2FA code for the current user. This Route Need Cookie Authorization"""
-    pass
-
-
 @user_router.get(
     "/sessions",
     response_model=list[LoginProfile],
@@ -365,13 +347,21 @@ async def list_sessions(session=db_dependency):
         ) from e
 
 
-@user_router.delete(
+@admin_router.delete(
     "/sessions/{id}",
     status_code=status.HTTP_200_OK,
 )
-async def revoke_session(authorize=user_dependency):
+async def revoke_session(
+    account_id: int, session=db_dependency, authorize=user_dependency
+):
     """Revoke a specific session for the current user. This Route Need Cookie Authorization"""
-    pass
+    try:
+        return await SessionService(session).terminate_session(account_id, authorize)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
 
 @admin_router.delete(
@@ -393,7 +383,7 @@ async def delete_account(
         ) from e
 
 
-@admin_router.post("/get-active-session", status_code=status.HTTP_200_OK)
+@admin_router.get("/get-active-session", status_code=status.HTTP_200_OK)
 async def get_active_session(
     session=db_dependency,
     authorize=user_dependency,
@@ -423,7 +413,7 @@ async def assign_role(
         ) from e
 
 
-@admin_router.post("/get-all-account", status_code=status.HTTP_200_OK)
+@admin_router.get("/get-all-account", status_code=status.HTTP_200_OK)
 async def get_all_account(session=db_dependency, authorize=user_dependency):
     try:
         return await AdminService(session).get_all_accounts(authorize)
@@ -475,7 +465,7 @@ async def reset_password_by_admin(
         ) from e
 
 
-@admin_router.post("/get-account-logs", status_code=status.HTTP_200_OK)
+@admin_router.get("/get-account-logs", status_code=status.HTTP_200_OK)
 async def get_account_logs(
     account_id: int, session=db_dependency, authorize=user_dependency
 ):
@@ -490,7 +480,7 @@ async def get_account_logs(
         ) from e
 
 
-@admin_router.post("/get-log-report", status_code=status.HTTP_200_OK)
+@admin_router.get("/get-log-report", status_code=status.HTTP_200_OK)
 async def get_log_report(
     account_id: int, session=db_dependency, authorize=user_dependency
 ):

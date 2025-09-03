@@ -6,6 +6,7 @@ from app.configuration.settings import settings
 from app.models.user_model import User, UserSession
 from app.schemas.user_schemas import UserRegister
 from app.services.email_service import EmailService
+from app.services.security_service import SecurityService
 from app.services.session_service import SessionService
 from app.services.token_service import TokenService
 from app.services.util_service import UtilService
@@ -315,7 +316,15 @@ class AuthService:
                 select(User).where(User.email == data.username)
             )
             account = statement.scalars().first()
+
+            if account.locked_until <= datetime.utcnow():
+                account.failed_login_attempts = 0
+                await self.session.commit()
+
             if not account:
+                await SecurityService(self.session).record_failed_login_attempts(
+                    account
+                )
                 logger.warning(f"Login attempt with invalid email: {data.username}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -323,6 +332,9 @@ class AuthService:
                 )
             # Verify password
             if not UtilService().verify_password(data.password, account.password_hash):
+                await SecurityService(self.session).record_failed_login_attempts(
+                    account
+                )
                 logger.warning(f"Invalid password attempt for email: {data.username}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -388,6 +400,8 @@ class AuthService:
                 samesite="Lax",
                 max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
             )
+            account.failed_login_attempts = 0
+            await self.session.commit()
             return {
                 "message": "Login successful",
                 "access_token_cookie": {"token": access_token},

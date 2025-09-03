@@ -121,9 +121,17 @@ class SessionService:
                 detail="Failed due to server down",
             ) from err
 
-    async def terminate_session(self, account_id: int):
+    async def terminate_session(self, account_id: int, current_user: dict):
         """Terminate an active user session. only single device"""
         try:
+            permission = await AuthorizationService(self.session).check_permissions(
+                current_user
+            )
+            if not permission:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="This operation is allow only Admin",
+                )
             await self.session.execute(
                 delete(UserSession).where(UserSession.id == account_id)
             )
