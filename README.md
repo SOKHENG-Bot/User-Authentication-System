@@ -20,7 +20,7 @@ Provides user registration, login/logout, password reset, and session management
 ## Installation
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.8
 - PostgreSQL
 - `pip` for dependency installation
 
