@@ -12,7 +12,7 @@ Provides user registration, login/logout, password reset, and session management
 - Security: Password hashing, input validation, and token-based authentication
 
 ## Technologies Used
-- Backend: Python 3.9+, FastAPI
+- Backend: Python 3.8, FastAPI
 - Database: PostgreSQL
 - Authentication: JWT / OAuth2 Password flow
 - Environment Management: `venv`
