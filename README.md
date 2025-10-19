@@ -1,7 +1,7 @@
 # User Authentication System (FastAPI)
 
 ## Overview
-A secure **User Authentication System** built with **FastAPI**.  
+**User Authentication System** built with **FastAPI**.  
 Provides user registration, login/logout, password reset, and session management for web applications.
 
 ## Features
